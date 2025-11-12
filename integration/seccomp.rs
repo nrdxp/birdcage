@@ -15,9 +15,13 @@ pub fn validate(_data: String) {
     let result = unsafe { libc::chdir(root_path.as_ptr()) };
     assert_eq!(result, 0);
 
-    // Ensure `unshare` is always blocked.
+    // Ensure `unshare` with CLONE_NEWUSER is blocked (no CAP_SYS_ADMIN).
     let result = unsafe { libc::unshare(libc::CLONE_NEWUSER) };
     assert_eq!(result, -1);
+
+    // Ensure `unshare` with CLONE_FS is allowed.
+    let result = unsafe { libc::unshare(libc::CLONE_FS) };
+    assert_eq!(result, 0);
 
     // Ensure `clone` is blocked with `CLONE_NEWUSER`.
     let stack = unsafe { libc::malloc(4096) };

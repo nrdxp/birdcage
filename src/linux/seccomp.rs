@@ -421,4 +421,5 @@ const SYSCALL_WHITELIST: &[libc::c_long] = &[
     libc::SYS_io_uring_enter,
     libc::SYS_io_uring_register,
     libc::SYS_io_uring_setup,
+    libc::SYS_unshare,
 ];
