@@ -37,38 +37,51 @@ pub(crate) fn setup_mount_namespace(exceptions: PathExceptions) -> io::Result<()
     mount_tmpfs(&new_root_c)?;
 
     // Sort bind mounts by shortest length, to create parents before their children.
-    let mut bind_mounts: Vec<_> = exceptions.bind_mounts.into_iter().collect();
-    bind_mounts.sort_unstable_by(|(a_path, a_flags), (b_path, b_flags)| {
-        match a_path.components().count().cmp(&b_path.components().count()) {
-            Ordering::Equal => (a_path, a_flags).cmp(&(b_path, b_flags)),
+    let mut bind_mounts: Vec<_> = exceptions.bind_mounts.clone().into_iter().collect();
+    bind_mounts.sort_unstable_by(|(_a_path, (a_dst, a_flags)), (_b_path, (b_dst, b_flags))| {
+        match a_dst.components().count().cmp(&b_dst.components().count()) {
+            Ordering::Equal => (a_dst, a_flags).cmp(&(b_dst, b_flags)),
             ord => ord,
         }
     });
 
     // Bind mount all allowed directories.
-    for (path, flags) in bind_mounts {
-        let src_c = CString::new(path.as_os_str().as_bytes()).unwrap();
+    for (src, (dst, flags)) in bind_mounts {
+        let src_c = CString::new(src.as_os_str().as_bytes()).unwrap();
 
         // Get bind mount destination.
-        let unrooted_path = path.strip_prefix("/").unwrap();
-        let dst = new_root.join(unrooted_path);
-        let dst_c = CString::new(dst.as_os_str().as_bytes()).unwrap();
+        let unrooted_dst = dst.strip_prefix("/").unwrap();
+        let mount_dst = new_root.join(unrooted_dst);
+        let mount_dst_c = CString::new(mount_dst.as_os_str().as_bytes()).unwrap();
 
         // Create mount target.
-        if let Err(err) = copy_tree(&path, &new_root) {
-            log::error!("skipping birdcage exception {path:?}: {err}");
+        if let Err(err) = copy_tree(&src, &new_root) {
+            log::error!("skipping birdcage exception {src:?}: {err}");
             continue;
         }
 
         // Bind path with full permissions.
-        bind_mount(&src_c, &dst_c)?;
+        bind_mount(&src_c, &mount_dst_c)?;
 
         // Remount to update permissions.
-        update_mount_flags(&dst_c, flags | MountAttrFlags::NOSUID)?;
+        update_mount_flags(&mount_dst_c, flags | MountAttrFlags::NOSUID)?;
     }
 
     // Ensure original symlink paths are available.
-    create_symlinks(&new_root, exceptions.symlinks)?;
+    create_symlinks(&new_root, exceptions.symlinks.clone(), &exceptions)?;
+
+    // Create symlinks for obfuscated paths.
+    if exceptions.obfuscate {
+        for (src, (dst, _)) in &exceptions.bind_mounts {
+            let unrooted_src = src.strip_prefix("/").unwrap();
+            let symlink_src = new_root.join(unrooted_src);
+            let symlink_target = dst.clone();
+            if let Some(parent) = symlink_src.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            unixfs::symlink(symlink_target, symlink_src)?;
+        }
+    }
 
     // Bind mount old procfs.
     let old_proc_c = CString::new("/proc").unwrap();
@@ -96,7 +109,7 @@ pub(crate) fn setup_mount_namespace(exceptions: PathExceptions) -> io::Result<()
 /// symlink ourselves and it's not possible to mount on top of it anyway. So
 /// here we make sure that symlinks are created if no bind mount was created for
 /// their parent directory.
-fn create_symlinks(new_root: &Path, symlinks: Vec<(PathBuf, PathBuf)>) -> io::Result<()> {
+fn create_symlinks(new_root: &Path, symlinks: Vec<(PathBuf, PathBuf)>, exceptions: &PathExceptions) -> io::Result<()> {
     for (symlink, target) in symlinks {
         // Ignore symlinks if a parent bind mount exists.
         let unrooted_path = symlink.strip_prefix("/").unwrap();
@@ -113,7 +126,12 @@ fn create_symlinks(new_root: &Path, symlinks: Vec<(PathBuf, PathBuf)>) -> io::Re
         copy_tree(parent, new_root)?;
 
         // Create the symlink.
-        unixfs::symlink(target, dst)?;
+        let target_path = if exceptions.obfuscate {
+            exceptions.bind_mounts.get(&target).map(|(d,_)| d.clone()).unwrap_or(target)
+        } else {
+            target
+        };
+        unixfs::symlink(target_path, dst)?;
     }
 
     Ok(())

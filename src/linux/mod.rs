@@ -26,6 +26,7 @@ pub struct LinuxSandbox {
     path_exceptions: PathExceptions,
     allow_networking: bool,
     full_env: bool,
+    obfuscate_paths: bool,
 }
 
 impl Sandbox for LinuxSandbox {
@@ -34,6 +35,7 @@ impl Sandbox for LinuxSandbox {
     }
 
     fn add_exception(&mut self, exception: Exception) -> Result<&mut Self> {
+        self.path_exceptions.obfuscate = self.obfuscate_paths;
         match exception {
             Exception::Read(path) => self.path_exceptions.update(path, false, false)?,
             Exception::WriteAndRead(path) => self.path_exceptions.update(path, true, false)?,
@@ -281,7 +283,7 @@ impl ProcessInitArg {
             parent_euid,
             parent_egid,
             sandboxee,
-            path_exceptions: sandbox.path_exceptions,
+            path_exceptions: sandbox.path_exceptions.clone(),
             stdin_rx: stdin.0,
             stdout_tx: stdout.1,
             stderr_tx: stderr.1,
@@ -296,10 +298,11 @@ impl ProcessInitArg {
 }
 
 /// Path permissions required for the sandbox.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct PathExceptions {
-    bind_mounts: HashMap<PathBuf, MountAttrFlags>,
+    bind_mounts: HashMap<PathBuf, (PathBuf, MountAttrFlags)>,
     symlinks: Vec<(PathBuf, PathBuf)>,
+    obfuscate: bool,
 }
 
 impl PathExceptions {
@@ -322,8 +325,14 @@ impl PathExceptions {
             Err(_) => return Err(Error::InvalidPath(path)),
         };
 
+        let dst = if self.obfuscate {
+            Self::generate_random_path(&canonical_path)
+        } else {
+            PathBuf::from("/").join(canonical_path.strip_prefix("/").unwrap())
+        };
+
         // Store original symlink path to create it if necessary.
-        if path_has_symlinks(&path) {
+        if !self.obfuscate && path_has_symlinks(&path) {
             // Normalize symlink's path.
             let absolute = absolute(&path)?;
             let normalized = normalize_path(&absolute);
@@ -333,10 +342,10 @@ impl PathExceptions {
 
         // Update bind mount's permission flags.
 
-        let flags = self
+        let (_, flags) = self
             .bind_mounts
             .entry(canonical_path)
-            .or_insert(MountAttrFlags::RDONLY | MountAttrFlags::NOEXEC);
+            .or_insert((dst, MountAttrFlags::RDONLY | MountAttrFlags::NOEXEC));
 
         if write {
             flags.remove(MountAttrFlags::RDONLY);
@@ -347,6 +356,15 @@ impl PathExceptions {
         }
 
         Ok(())
+    }
+
+    fn generate_random_path(_path: &Path) -> PathBuf {
+        use std::io::Read;
+        let mut file = std::fs::File::open("/dev/urandom").unwrap();
+        let mut buf = [0u8; 8];
+        file.read_exact(&mut buf).unwrap();
+        let random = u64::from_le_bytes(buf);
+        PathBuf::from(format!("/obfuscated_{:x}", random))
     }
 }
 
