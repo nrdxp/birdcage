@@ -29,6 +29,19 @@ pub struct LinuxSandbox {
     obfuscate_paths: bool,
 }
 
+impl LinuxSandbox {
+    /// Enable path obfuscation for subsequent exceptions.
+    ///
+    /// Exceptions added before this call use predictable paths.
+    /// Exceptions added after use random obfuscated paths.
+    ///
+    /// This is a Linux-specific feature for enhanced security.
+    pub fn enable_path_obfuscation(&mut self) -> &mut Self {
+        self.obfuscate_paths = true;
+        self
+    }
+}
+
 impl Sandbox for LinuxSandbox {
     fn new() -> Self {
         Self::default()

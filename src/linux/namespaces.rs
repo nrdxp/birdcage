@@ -109,7 +109,11 @@ pub(crate) fn setup_mount_namespace(exceptions: PathExceptions) -> io::Result<()
 /// symlink ourselves and it's not possible to mount on top of it anyway. So
 /// here we make sure that symlinks are created if no bind mount was created for
 /// their parent directory.
-fn create_symlinks(new_root: &Path, symlinks: Vec<(PathBuf, PathBuf)>, exceptions: &PathExceptions) -> io::Result<()> {
+fn create_symlinks(
+    new_root: &Path,
+    symlinks: Vec<(PathBuf, PathBuf)>,
+    exceptions: &PathExceptions,
+) -> io::Result<()> {
     for (symlink, target) in symlinks {
         // Ignore symlinks if a parent bind mount exists.
         let unrooted_path = symlink.strip_prefix("/").unwrap();
@@ -127,7 +131,7 @@ fn create_symlinks(new_root: &Path, symlinks: Vec<(PathBuf, PathBuf)>, exception
 
         // Create the symlink.
         let target_path = if exceptions.obfuscate {
-            exceptions.bind_mounts.get(&target).map(|(d,_)| d.clone()).unwrap_or(target)
+            exceptions.bind_mounts.get(&target).map(|(d, _)| d.clone()).unwrap_or(target)
         } else {
             target
         };
