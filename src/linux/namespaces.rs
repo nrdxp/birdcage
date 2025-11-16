@@ -197,7 +197,7 @@ pub fn mount_proc(dst: &CStr) -> io::Result<()> {
 }
 
 /// Create a new bind mount.
-fn bind_mount(src: &CStr, dst: &CStr) -> io::Result<()> {
+pub(super) fn bind_mount(src: &CStr, dst: &CStr) -> io::Result<()> {
     let flags = MountFlags::BIND | MountFlags::RECURSIVE;
     let res =
         unsafe { libc::mount(src.as_ptr(), dst.as_ptr(), ptr::null(), flags.bits(), ptr::null()) };

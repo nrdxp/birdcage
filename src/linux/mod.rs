@@ -191,12 +191,29 @@ fn sandbox_init_inner(mut init_arg: ProcessInitArg) -> io::Result<libc::c_int> {
     // Map root UID and GID.
     namespaces::map_ids(init_arg.parent_euid.as_raw(), init_arg.parent_egid.as_raw(), 0, 0)?;
 
+    // Handle working directory remapping before mount namespace setup.
+    let working_dir = env::current_dir()?;
+    let working_dir_has_exception = init_arg.path_exceptions.bind_mounts.contains_key(&working_dir);
+
     // Isolate filesystem using a mount namespace.
     namespaces::setup_mount_namespace(init_arg.path_exceptions)?;
 
     // Create new procfs directory.
     let new_proc_c = CString::new("/proc")?;
     namespaces::mount_proc(&new_proc_c)?;
+
+    // Handle working directory remapping.
+    if working_dir_has_exception {
+        // Working directory has an exception, remap it to /work
+        fs::create_dir_all("/work")?;
+        let work_c = CString::new("/work")?;
+        let working_dir_c = CString::new(working_dir.as_os_str().as_bytes())?;
+        namespaces::bind_mount(&working_dir_c, &work_c)?;
+        env::set_current_dir("/work")?;
+    } else {
+        // No exception for working directory, cd to root
+        env::set_current_dir("/")?;
+    }
 
     // Drop to nobody user mapping.
     namespaces::create_user_namespace(

@@ -5,8 +5,9 @@
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::io::{Result as IoResult, Write};
+use std::os::unix::fs;
 use std::path::{Path, PathBuf};
-use std::{fs, ptr};
+use std::{env, ptr};
 
 use bitflags::bitflags;
 
@@ -86,6 +87,18 @@ impl Sandbox for MacSandbox {
         let result = unsafe { sandbox_init(profile.as_ptr(), 0, &mut error) };
 
         if result == 0 {
+            // Handle working directory remapping
+            let working_dir = std::env::current_dir()?;
+            let escaped_working_dir = escape_path(&working_dir)?;
+            if self.path_exceptions.contains_key(&escaped_working_dir) {
+                // Working directory has an exception, create /work symlink and cd there
+                fs::symlink(&working_dir, "/work")?;
+                env::set_current_dir("/work")?;
+            } else {
+                // No exception, cd to root
+                env::set_current_dir("/")?;
+            }
+
             // Drop privileges to nobody before spawning the sandboxed process
             unsafe {
                 libc::setgid(NOBODY_GID);
