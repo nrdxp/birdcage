@@ -16,6 +16,10 @@ use crate::linux::PathExceptions;
 /// Path for mount namespace's new root.
 const NEW_ROOT: &str = "/tmp/birdcage-root";
 
+/// UID and GID for the nobody user.
+pub const NOBODY_UID: u32 = 65534;
+pub const NOBODY_GID: u32 = 65534;
+
 /// Isolate filesystem access in an existing mount namespace.
 ///
 /// This will deny access to any path which isn't part of `bind_mounts`. Allowed

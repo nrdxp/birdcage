@@ -198,10 +198,10 @@ fn sandbox_init_inner(mut init_arg: ProcessInitArg) -> io::Result<libc::c_int> {
     let new_proc_c = CString::new("/proc")?;
     namespaces::mount_proc(&new_proc_c)?;
 
-    // Drop root user mapping.
+    // Drop to nobody user mapping.
     namespaces::create_user_namespace(
-        init_arg.parent_euid.as_raw(),
-        init_arg.parent_egid.as_raw(),
+        namespaces::NOBODY_UID,
+        namespaces::NOBODY_GID,
         Namespaces::empty(),
     )?;
 

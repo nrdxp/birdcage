@@ -31,8 +31,10 @@ pub fn validate(data: String) {
     // Deserialize test data.
     let data: TestData = serde_json::from_str(&data).unwrap();
 
-    assert_eq!(data.uid, unsafe { libc::getuid() });
-    assert_eq!(data.gid, unsafe { libc::getgid() });
-    assert_eq!(data.euid, unsafe { libc::geteuid() });
-    assert_eq!(data.egid, unsafe { libc::getegid() });
+    // The sandboxed process should now run as nobody (UID/GID 65534)
+    // instead of the parent's UID/GID
+    assert_eq!(65534, unsafe { libc::getuid() });
+    assert_eq!(65534, unsafe { libc::getgid() });
+    assert_eq!(65534, unsafe { libc::geteuid() });
+    assert_eq!(65534, unsafe { libc::getegid() });
 }

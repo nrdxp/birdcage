@@ -23,11 +23,17 @@ static DEFAULT_RULE: &[u8] = b"\
 (allow ipc*)
 (allow signal (target others))
 (allow process-fork)
+(allow process-setuid)
+(allow process-setgid)
 (allow sysctl*)
 (allow system*)
 (allow file-read-metadata)
 (system-network)
 ";
+
+/// UID and GID for the nobody user.
+const NOBODY_UID: u32 = 65534;
+const NOBODY_GID: u32 = 65534;
 
 /// macOS sandboxing based on Seatbelt.
 #[derive(Default)]
@@ -80,6 +86,11 @@ impl Sandbox for MacSandbox {
         let result = unsafe { sandbox_init(profile.as_ptr(), 0, &mut error) };
 
         if result == 0 {
+            // Drop privileges to nobody before spawning the sandboxed process
+            unsafe {
+                libc::setgid(NOBODY_GID);
+                libc::setuid(NOBODY_UID);
+            }
             Ok(sandboxee.spawn()?)
         } else {
             unsafe {
